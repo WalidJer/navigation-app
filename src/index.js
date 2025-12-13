@@ -5,6 +5,7 @@ import express from "express";
 import cors from "cors";
 import "./config/env.js";
 import { healthRouter } from "./routes/health.routes.js";
+import { addressesRouter } from "./routes/addresses.routes.js";
 
 
 const PORT = process.env.PORT || 4000;
@@ -20,6 +21,7 @@ app.use(express.json());
 //                          ROUTES
 // ──────────────────────────────────────────────────────────────
 app.use("/api/health", healthRouter);
+app.use("/api/addresses", addressesRouter);
 
 // 404
 app.use((req, res) => {
