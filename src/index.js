@@ -6,6 +6,7 @@ import cors from "cors";
 import "./config/env.js";
 import { healthRouter } from "./routes/health.routes.js";
 import { addressesRouter } from "./routes/addresses.routes.js";
+import { geocodeRouter } from "./routes/geocode.routes.js";
 
 
 const PORT = process.env.PORT || 4000;
@@ -22,6 +23,7 @@ app.use(express.json());
 // ──────────────────────────────────────────────────────────────
 app.use("/api/health", healthRouter);
 app.use("/api/addresses", addressesRouter);
+app.use("/api/geocode", geocodeRouter);
 
 // 404
 app.use((req, res) => {

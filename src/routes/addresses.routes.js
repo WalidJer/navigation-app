@@ -9,7 +9,7 @@ addressesRouter.get("/", async (req, res) => {
   const limit = Math.min(Math.max(parseInt(limitRaw || "10", 10), 1), 50);
 
   const q = `
-    SELECT id, address_text AS address, created_at
+    SELECT id, address_text AS address, latitude, longitude, created_at
     FROM saved_addresses
     ORDER BY created_at DESC
     LIMIT $1
