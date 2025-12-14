@@ -1,71 +1,85 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 import { haversineMeters } from "../utils/geo.utils.js";
+import { sendError } from "../utils/http.js";
+import { rateLimit } from "../middleware/rateLimit.js";
+import { findCachedAddress } from "../db/addresses.repo.js";
 
 export const navigateRouter = Router();
 
-function isValidCoord(n) {
+function isFiniteNumber(n) {
   return typeof n === "number" && Number.isFinite(n);
 }
 
 // POST /api/navigate
 // Body: { address: string, from:{lat,lng}, speedMps?: number }
-navigateRouter.post("/", async (req, res) => {
+navigateRouter.post("/", rateLimit({ windowMs: 1000, max: 1 }), async (req, res) => {
   const address = (req.body?.address || "").trim();
   const from = req.body?.from;
   const speedMps = req.body?.speedMps;
 
-  if (!address) {
-    return res.status(400).json({ error: { message: "Address is required.", status: 400 } });
+  if (!address) return sendError(res, 400, "Address is required.");
+  if (!from || !isFiniteNumber(from.lat) || !isFiniteNumber(from.lng)) {
+    return sendError(res, 400, "Body must include { from:{lat,lng} } as numbers.");
   }
 
-  if (!from || !isValidCoord(from.lat) || !isValidCoord(from.lng)) {
-    return res.status(400).json({
-      error: { message: "Body must include { from:{lat,lng} } as numbers.", status: 400 }
+  // ──────────────────────────────────────────────────────────────
+  // 1) GEOCODE (cache first, otherwise Nominatim)
+  // ──────────────────────────────────────────────────────────────
+  const cached = await findCachedAddress(address);
+
+  let latitude;
+  let longitude;
+  let displayName = null;
+
+  // We'll return a consistent "destination" object
+  let destination = cached ?? null;
+
+  if (cached) {
+    latitude = cached.latitude;
+    longitude = cached.longitude;
+  } else {
+    const geoUrl = new URL("https://nominatim.openstreetmap.org/search");
+    geoUrl.searchParams.set("q", address);
+    geoUrl.searchParams.set("format", "json");
+    geoUrl.searchParams.set("limit", "1");
+
+    const geoResp = await fetch(geoUrl.toString(), {
+      headers: {
+        "User-Agent": "navigation-app-backend-v2/1.0 (dev)",
+        "Accept": "application/json"
+      }
     });
-  }
 
-  // ──────────────────────────────────────────────────────────────
-  // 1) GEOCODE (Nominatim)
-  // ──────────────────────────────────────────────────────────────
-  const geoUrl = new URL("https://nominatim.openstreetmap.org/search");
-  geoUrl.searchParams.set("q", address);
-  geoUrl.searchParams.set("format", "json");
-  geoUrl.searchParams.set("limit", "1");
-
-  const geoResp = await fetch(geoUrl.toString(), {
-    headers: {
-      "User-Agent": "navigation-app-backend-v2/1.0 (dev)",
-      "Accept": "application/json"
+    if (!geoResp.ok) {
+      return sendError(res, 502, `Geocoding failed: HTTP ${geoResp.status}`);
     }
-  });
 
-  if (!geoResp.ok) {
-    return res.status(502).json({
-      error: { message: `Geocoding failed: HTTP ${geoResp.status}`, status: 502 }
-    });
+    const geoData = await geoResp.json();
+    if (!Array.isArray(geoData) || geoData.length === 0) {
+      return sendError(res, 404, "Address not found.");
+    }
+
+    const first = geoData[0];
+    latitude = Number(first.lat);
+    longitude = Number(first.lon);
+    displayName = first.display_name;
+
+    if (!isFiniteNumber(latitude) || !isFiniteNumber(longitude)) {
+      return sendError(res, 502, "Geocoding returned invalid coordinates.");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 2) SAVE DESTINATION TO DB
+    // ──────────────────────────────────────────────────────────────
+    const insert = `
+      INSERT INTO saved_addresses (address_text, latitude, longitude)
+      VALUES ($1, $2, $3)
+      RETURNING id, address_text AS address, latitude, longitude, created_at
+    `;
+    const saved = await pool.query(insert, [address, latitude, longitude]);
+    destination = saved.rows[0];
   }
-
-  const geoData = await geoResp.json();
-  if (!Array.isArray(geoData) || geoData.length === 0) {
-    return res.status(404).json({ error: { message: "Address not found.", status: 404 } });
-  }
-
-  const first = geoData[0];
-  const latitude = Number(first.lat);
-  const longitude = Number(first.lon);
-  const displayName = first.display_name;
-
-  // ──────────────────────────────────────────────────────────────
-  // 2) SAVE DESTINATION TO DB
-  // ──────────────────────────────────────────────────────────────
-  const insert = `
-    INSERT INTO saved_addresses (address_text, latitude, longitude)
-    VALUES ($1, $2, $3)
-    RETURNING id, address_text AS address, latitude, longitude, created_at
-  `;
-  const saved = await pool.query(insert, [address, latitude, longitude]);
-  const destination = saved.rows[0];
 
   // ──────────────────────────────────────────────────────────────
   // 3) ROUTE (OSRM)
@@ -78,20 +92,18 @@ navigateRouter.post("/", async (req, res) => {
 
   const routeResp = await fetch(routeUrl.toString(), {
     headers: {
-      "User-Agent": "navigation-app-backend/1.0 (dev)",
+      "User-Agent": "navigation-app-backend-v2/1.0 (dev)",
       "Accept": "application/json"
     }
   });
 
   if (!routeResp.ok) {
-    return res.status(502).json({
-      error: { message: `Routing failed: HTTP ${routeResp.status}`, status: 502 }
-    });
+    return sendError(res, 502, `Routing failed: HTTP ${routeResp.status}`);
   }
 
   const routeData = await routeResp.json();
   if (routeData.code !== "Ok" || !routeData.routes?.length) {
-    return res.status(404).json({ error: { message: "Route not found.", status: 404 } });
+    return sendError(res, 404, "Route not found.");
   }
 
   const r = routeData.routes[0];
@@ -110,7 +122,7 @@ navigateRouter.post("/", async (req, res) => {
   const remainingMeters = haversineMeters(from, to);
 
   let etaSeconds = null;
-  if (isValidCoord(speedMps) && speedMps > 0.5) {
+  if (isFiniteNumber(speedMps) && speedMps > 0) {
     etaSeconds = remainingMeters / speedMps;
   }
 
@@ -124,10 +136,11 @@ navigateRouter.post("/", async (req, res) => {
   // ──────────────────────────────────────────────────────────────
   // RESPONSE
   // ──────────────────────────────────────────────────────────────
-  return res.status(201).json({
+  return res.status(200).json({
     destination: {
       ...destination,
-      displayName
+      displayName,
+      cached: !!cached
     },
     route,
     live

@@ -1,15 +1,27 @@
 import { Router } from "express";
 import { pool } from "../db/pool.js";
+import { sendError } from "../utils/http.js";
+import { rateLimit } from "../middleware/rateLimit.js";
+import { findCachedAddress } from "../db/addresses.repo.js";
 
 export const geocodeRouter = Router();
 
 // POST /api/geocode  { "address": "123 Main St, St. John's, NL" }
-geocodeRouter.post("/", async (req, res) => {
+geocodeRouter.post("/", rateLimit({ windowMs: 1000, max: 1 }), async (req, res) => {
   const address = (req.body?.address || "").trim();
-  if (!address) {
-    return res.status(400).json({ error: { message: "Address is required.", status: 400 } });
+  if (!address) return sendError(res, 400, "Address is required.");
+
+// 1) CACHE FIRST
+  const cached = await findCachedAddress(address);
+  if (cached) {
+    return res.json({
+      ...cached,
+      cached: true
+    });
   }
 
+
+  // 2) GEOCODE (Nominatim)
   // Nominatim search endpoint
   const url = new URL("https://nominatim.openstreetmap.org/search");
   url.searchParams.set("q", address);
@@ -24,22 +36,17 @@ geocodeRouter.post("/", async (req, res) => {
     }
   });
 
-  if (!resp.ok) {
-    return res.status(502).json({
-      error: { message: `Geocoding failed: HTTP ${resp.status}`, status: 502 }
-    });
-  }
+  if (!resp.ok) return sendError(res, 502, `Geocoding failed: HTTP ${resp.status}`);
 
   const data = await resp.json();
-  if (!Array.isArray(data) || data.length === 0) {
-    return res.status(404).json({ error: { message: "Address not found.", status: 404 } });
-  }
+  if (!Array.isArray(data) || data.length === 0) return sendError(res, 404, "Address not found.");
 
   const first = data[0];
   const latitude = Number(first.lat);
   const longitude = Number(first.lon);
   const displayName = first.display_name;
 
+   // 3) SAVE
   // Save address + coords
   const insert = `
     INSERT INTO saved_addresses (address_text, latitude, longitude)
