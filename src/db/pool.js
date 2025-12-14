@@ -15,7 +15,7 @@ export const pool = new Pool({
   port: Number(dbUrl.port || 5432),
   database: dbUrl.pathname.replace("/", ""),
   user: decodeURIComponent(dbUrl.username),
-  password: decodeURIComponent(dbUrl.password), // ✅ ensures it's a string
+  password: decodeURIComponent(dbUrl.password), 
 });
 
 export async function pingDb() {

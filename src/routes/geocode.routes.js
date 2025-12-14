@@ -19,7 +19,7 @@ geocodeRouter.post("/", async (req, res) => {
   const resp = await fetch(url.toString(), {
     headers: {
       // Nominatim expects a descriptive User-Agent
-      "User-Agent": "navigation-app-backend-v2/1.0 (dev)",
+      "User-Agent": "navigation-app-backend/1.0 (dev)",
       "Accept": "application/json"
     }
   });

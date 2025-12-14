@@ -7,6 +7,7 @@ import "./config/env.js";
 import { healthRouter } from "./routes/health.routes.js";
 import { addressesRouter } from "./routes/addresses.routes.js";
 import { geocodeRouter } from "./routes/geocode.routes.js";
+import { routeRouter } from "./routes/route.routes.js";
 
 
 const PORT = process.env.PORT || 4000;
@@ -24,7 +25,7 @@ app.use(express.json());
 app.use("/api/health", healthRouter);
 app.use("/api/addresses", addressesRouter);
 app.use("/api/geocode", geocodeRouter);
-
+app.use("/api/route", routeRouter);
 // 404
 app.use((req, res) => {
   res.status(404).json({ error: { message: "Not Found", status: 404 } });
