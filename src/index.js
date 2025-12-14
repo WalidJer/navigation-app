@@ -9,6 +9,7 @@ import { addressesRouter } from "./routes/addresses.routes.js";
 import { geocodeRouter } from "./routes/geocode.routes.js";
 import { routeRouter } from "./routes/route.routes.js";
 import { navRouter } from "./routes/nav.routes.js";
+import { navigateRouter } from "./routes/navigate.routes.js";
 
 
 const PORT = process.env.PORT || 4000;
@@ -28,6 +29,7 @@ app.use("/api/addresses", addressesRouter);
 app.use("/api/geocode", geocodeRouter);
 app.use("/api/route", routeRouter);
 app.use("/api/nav", navRouter);
+app.use("/api/navigate", navigateRouter);
 
 // 404
 app.use((req, res) => {

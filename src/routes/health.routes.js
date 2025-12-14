@@ -9,7 +9,7 @@ healthRouter.get("/", async (req, res) => {
   try {
     db = (await pingDb()) ? "ok" : "down";
   } catch (err) {
-    console.log("DB ping failed:", err); // prints full error
+    console.log("DB ping failed:", err); 
     db = "down";
   }
 
