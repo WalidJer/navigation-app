@@ -8,6 +8,7 @@ import { healthRouter } from "./routes/health.routes.js";
 import { addressesRouter } from "./routes/addresses.routes.js";
 import { geocodeRouter } from "./routes/geocode.routes.js";
 import { routeRouter } from "./routes/route.routes.js";
+import { navRouter } from "./routes/nav.routes.js";
 
 
 const PORT = process.env.PORT || 4000;
@@ -26,6 +27,8 @@ app.use("/api/health", healthRouter);
 app.use("/api/addresses", addressesRouter);
 app.use("/api/geocode", geocodeRouter);
 app.use("/api/route", routeRouter);
+app.use("/api/nav", navRouter);
+
 // 404
 app.use((req, res) => {
   res.status(404).json({ error: { message: "Not Found", status: 404 } });
